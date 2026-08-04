@@ -1,0 +1,46 @@
+{
+  "name": "ov-streaming-webrtc",
+  "version": "1.0.0",
+  "description": "Cross-platform WebRTC OpenUSD viewer for Isaac Sim 5.1 and 6.0.x",
+  "author": "tommywu052",
+  "license": "SEE LICENSE IN LICENSE.txt",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "dev:5.1": "vite --mode isaac51",
+    "start:viewer:6": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/start-viewer.ps1 -IsaacVersion 6.0",
+    "start:viewer:minimal": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/start-viewer.ps1 -IsaacVersion 6.0 -Minimal",
+    "start:viewer:5.1": "powershell -ExecutionPolicy Bypass -File ./scripts/windows/start-viewer.ps1 -IsaacVersion 5.1",
+    "build": "vite build",
+    "build:5.1": "vite build --mode isaac51",
+    "build:docs": "npx typedoc",
+    "format": "npx prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "test": "mocha --require ts-node/register 'src/tests/**/*.{ts,tsx}'"
+  },
+  "dependencies": {
+    "@nvidia/ov-web-rtc": "6.x",
+    "deepmerge": "^4.3.1",
+    "is-plain-object": "^5.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.0",
+    "@types/mocha": "^10.0.6",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "chai": "^5.2.0",
+    "mocha": "^10.2.0",
+    "prettier": "^3.5.3",
+    "prettier-plugin-brace-style": "^0.7.2",
+    "ts-node": "^10.9.2",
+    "typedoc": "^0.27.8",
+    "vite": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

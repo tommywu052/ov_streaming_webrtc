@@ -1,0 +1,39 @@
+[package]
+title = "Isaac Sim 5.1 Web Viewer"
+description = "Viewport-only Isaac Sim 5.1 with WebRTC application messaging"
+version = "1.0.0"
+keywords = ["experience", "streaming", "viewer"]
+
+[dependencies]
+"isaacsim.exp.full" = {}
+"omni.services.livestream.nvcf" = {}
+"ov.web.viewer.backend" = {}
+
+[settings]
+app.name = "Isaac-Sim-5.1-Web-Viewer"
+app.version = "1.0.0"
+app.vulkan = true
+app.enableDeveloperWarnings = false
+
+[settings.app.window]
+hideUi = true
+title = "Isaac Sim 5.1 Web Viewer"
+drawMouse = true
+width = 1280
+height = 720
+
+[settings.app.viewport.defaults.hud]
+visible = false
+
+[settings.app.livestream]
+allowResize = true
+port = 49100
+outDirectory = "${data}"
+
+[settings.app.livestream.nvcf]
+quitOnSessionEnded = false
+sessionResumeTimeoutSeconds = 30
+waitForCustomReadyEvent = false
+
+[settings.exts."ov.web.viewer.backend"]
+websocketPort = 8211
