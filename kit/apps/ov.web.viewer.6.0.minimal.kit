@@ -1,0 +1,82 @@
+[package]
+title = "Minimal Isaac Sim 6 Web Viewer"
+description = "Minimal Isaac Sim 6.0.x RTX OpenUSD viewer with WebRTC application messaging"
+version = "1.0.0"
+keywords = ["experience", "streaming", "viewer", "minimal"]
+
+[dependencies]
+# Minimal viewport stack based on NVIDIA's USD Viewer Kit template.
+"omni.hydra.rtx" = {}
+"omni.kit.manipulator.camera" = {}
+"omni.kit.manipulator.selection" = {}
+"omni.kit.renderer.core" = {}
+"omni.kit.uiapp" = {}
+"omni.kit.viewport.utility" = {}
+"omni.kit.viewport.window" = {}
+"omni.ujitso.client" = {}
+
+# WebRTC video/input and bidirectional application messages.
+"omni.kit.livestream.app" = {}
+"ov.web.viewer.backend" = { order = 1000 }
+
+[settings]
+app.name = "Minimal-Isaac-Web-Viewer"
+app.version = "1.0.0"
+app.vulkan = true
+app.enableDeveloperWarnings = false
+app.fastShutdown = true
+app.content.emptyStageOnStart = true
+app.file.ignoreUnsavedOnExit = true
+
+renderer.enabled = "rtx"
+renderer.active = "rtx"
+renderer.multiGpu.enabled = false
+rendergraph.maxFramesInFlight = 1
+rtx-transient.resourcemanager.enableTextureStreaming = true
+rtx-transient.dlssg.enabled = false
+
+[settings.app.window]
+hideUi = true
+title = "Minimal Isaac Sim 6 Web Viewer"
+drawMouse = true
+width = 1280
+height = 720
+
+[settings.app.renderer.resolution]
+width = 1280
+height = 720
+
+[settings.app.viewport.defaults]
+fillViewport = true
+hud.visible = false
+guide.grid.visible = false
+guide.axis.visible = false
+scene.cameras.visible = false
+scene.lights.visible = false
+
+[settings.persistent.app.viewport]
+noPadding = true
+defaults.tickRate = 30
+
+[settings.app.livestream]
+allowResize = false
+skipCapture = false
+outDirectory = "${data}"
+
+[settings.exts."omni.kit.renderer.core"]
+present.enabled = true
+present.presentAfterRendering = true
+
+[settings.exts."omni.kit.livestream.app"]
+primaryStream.signalPort = 49100
+primaryStream.streamPort = 47998
+primaryStream.allowDynamicResize = false
+primaryStream.targetFps = 30
+primaryStream.enableEventTracing = true
+primaryStream.enableOpenTelemetry = false
+primaryStream.streamType = "webrtc"
+
+[settings.exts."omni.services.livestream.session"]
+quitOnSessionEnded = false
+resumeTimeoutSeconds = 30
+waitForSessionReadyEvent = false

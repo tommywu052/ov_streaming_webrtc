@@ -1,0 +1,15 @@
+[package]
+version = "1.0.0"
+title = "OV Web Viewer Backend"
+description = "OpenUSD stage and selection messaging for the OV Web Viewer."
+category = "Web Streaming"
+authors = ["NVIDIA"]
+
+[dependencies]
+"omni.kit.livestream.messaging" = {}
+"omni.kit.viewport.utility" = {}
+"omni.usd" = {}
+"isaacsim.storage.native" = {}
+
+[[python.module]]
+name = "ov.web.viewer.backend"
