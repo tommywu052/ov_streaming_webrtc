@@ -1,5 +1,7 @@
 import asyncio
 import json
+import math
+import time
 
 import carb
 import carb.eventdispatcher
@@ -8,6 +10,7 @@ import omni.ext
 import omni.kit.app
 import omni.kit.livestream.messaging as messaging
 import omni.kit.viewport.utility
+import omni.timeline
 import omni.usd
 import websockets
 
@@ -27,10 +30,13 @@ class WebViewerBackendExtension(omni.ext.IExt):
         self._tasks = set()
         self._lift_tasks = {}
         self._lifted_paths = set()
+        self._motion_task = None
+        self._motion_bases = {}
         self._ws_clients = set()
         self._ws_server = None
         self._suppressed_selection_path = None
         self._usd_context = omni.usd.get_context()
+        self._timeline = omni.timeline.get_timeline_interface()
         self._last_stage_url = self._current_stage_url()
 
         settings = carb.settings.get_settings()
@@ -42,6 +48,8 @@ class WebViewerBackendExtension(omni.ext.IExt):
         self._register_request("viewer:open-stage", self._open_stage)
         self._register_request("viewer:reload-stage", self._reload_stage)
         self._register_request("viewer:select-prim", self._select_prim)
+        self._register_request("viewer:get-timeline", self._get_timeline)
+        self._register_request("viewer:set-timeline-playing", self._set_timeline_playing)
 
         if self._legacy_messaging:
             self._schedule(self._start_legacy_websocket())
@@ -49,6 +57,7 @@ class WebViewerBackendExtension(omni.ext.IExt):
         messaging.register_event_type_to_send("viewer:selection-changed")
         messaging.register_event_type_to_send("viewer:stage-changed")
         messaging.register_event_type_to_send("viewer:interaction")
+        messaging.register_event_type_to_send("viewer:timeline-changed")
 
         dispatcher = carb.eventdispatcher.get_eventdispatcher()
         self._selection_subscription = dispatcher.observe_event(
@@ -59,6 +68,11 @@ class WebViewerBackendExtension(omni.ext.IExt):
             event_name=self._usd_context.stage_event_name(omni.usd.StageEventType.OPENED),
             on_event=self._on_stage_opened,
         )
+        self._timeline_subscription = (
+            self._timeline.get_timeline_event_stream().create_subscription_to_pop(
+                self._on_timeline_event,
+            )
+        )
         carb.log_info("[ov.web.viewer.backend] Web viewer messaging backend is ready")
 
     def on_shutdown(self):
@@ -66,6 +80,10 @@ class WebViewerBackendExtension(omni.ext.IExt):
             task.cancel()
         self._tasks.clear()
         self._lift_tasks.clear()
+        if getattr(self, "_motion_task", None):
+            self._motion_task.cancel()
+            self._motion_task = None
+        self._motion_bases.clear()
         if getattr(self, "_ws_server", None):
             self._ws_server.close()
             self._ws_server = None
@@ -78,9 +96,13 @@ class WebViewerBackendExtension(omni.ext.IExt):
         if getattr(self, "_opened_subscription", None):
             self._opened_subscription.reset()
             self._opened_subscription = None
+        if getattr(self, "_timeline_subscription", None):
+            self._timeline_subscription.unsubscribe()
+            self._timeline_subscription = None
         messaging.unregister_event_type_to_send("viewer:selection-changed")
         messaging.unregister_event_type_to_send("viewer:stage-changed")
         messaging.unregister_event_type_to_send("viewer:interaction")
+        messaging.unregister_event_type_to_send("viewer:timeline-changed")
         for handler in self._handlers:
             if hasattr(handler, "unsubscribe"):
                 handler.unsubscribe()
@@ -88,6 +110,7 @@ class WebViewerBackendExtension(omni.ext.IExt):
             messaging.unregister_event_type_to_send(event_name)
         self._handlers.clear()
         self._legacy_response_events.clear()
+        self._timeline = None
         self._usd_context = None
 
     def _schedule(self, coroutine):
@@ -320,6 +343,31 @@ class WebViewerBackendExtension(omni.ext.IExt):
         self._usd_context.get_selection().set_selected_prim_paths([path], True)
         return {"success": True, "path": path}
 
+    def _timeline_state(self):
+        return {
+            "playing": self._timeline.is_playing(),
+            "currentTime": self._timeline.get_current_time(),
+        }
+
+    def _get_timeline(self, event, **_kwargs):
+        return self._timeline_state()
+
+    def _set_timeline_playing(self, event, playing=False, **_kwargs):
+        playing = bool(playing)
+        if playing:
+            self._timeline.play()
+        else:
+            self._timeline.stop()
+        # Timeline state changes are applied on the next Kit update. Return the
+        # requested state immediately; the event subscription sends the
+        # authoritative state once that update has completed.
+        carb.log_info(f"[ov.web.viewer.backend] Timeline {'playing' if playing else 'stopped'}")
+        return {
+            "success": True,
+            "playing": playing,
+            "currentTime": self._timeline.get_current_time(),
+        }
+
     def _on_selection_changed(self, _event):
         path = self._selection_path()
         self._send_application_event(
@@ -341,12 +389,132 @@ class WebViewerBackendExtension(omni.ext.IExt):
             )
 
     def _on_stage_opened(self, _event):
+        self._stop_motion_demo()
+        self._motion_bases.clear()
         url = self._current_stage_url()
         self._last_stage_url = url or self._last_stage_url
         self._send_application_event(
             "viewer:stage-changed",
             {"url": url},
         )
+
+    def _on_timeline_event(self, event):
+        state_event_types = {
+            int(omni.timeline.TimelineEventType.PLAY),
+            int(omni.timeline.TimelineEventType.PAUSE),
+            int(omni.timeline.TimelineEventType.STOP),
+        }
+        if event.type not in state_event_types:
+            return
+        if event.type == int(omni.timeline.TimelineEventType.PLAY):
+            self._start_motion_demo()
+        else:
+            self._stop_motion_demo()
+        self._send_application_event(
+            "viewer:timeline-changed",
+            self._timeline_state(),
+        )
+
+    def _start_motion_demo(self):
+        self._stop_motion_demo()
+        stage = self._usd_context.get_stage()
+        selected_path = self._selection_path()
+        prim = self._lift_target_prim(stage, selected_path) if stage and selected_path else None
+        if stage and not prim:
+            prim = self._create_motion_demo_prim(stage)
+        if not prim:
+            self._send_application_event(
+                "viewer:interaction",
+                {"action": "Unable to create motion demo", "path": ""},
+            )
+            return
+
+        task = self._schedule(self._animate_motion_demo(prim.GetPath().pathString))
+        self._motion_task = task
+        task.add_done_callback(
+            lambda completed: setattr(self, "_motion_task", None)
+            if self._motion_task is completed
+            else None
+        )
+
+    def _create_motion_demo_prim(self, stage):
+        path = "/WebViewerMotionDemo"
+        previous_target = stage.GetEditTarget()
+        try:
+            stage.SetEditTarget(stage.GetSessionLayer())
+            demo = UsdGeom.Xform.Define(stage, path)
+            cube = UsdGeom.Cube.Define(stage, f"{path}/Cube")
+            meters_per_unit = UsdGeom.GetStageMetersPerUnit(stage) or 0.01
+            cube.CreateSizeAttr(0.50 / meters_per_unit)
+            cube.CreateDisplayColorAttr([Gf.Vec3f(0.45, 1.0, 0.05)])
+        finally:
+            stage.SetEditTarget(previous_target)
+
+        self._suppressed_selection_path = path
+        self._usd_context.get_selection().set_selected_prim_paths([path], True)
+        self._send_application_event(
+            "viewer:interaction",
+            {"action": "Created motion demo", "path": path},
+        )
+        return demo.GetPrim()
+
+    def _stop_motion_demo(self):
+        task = getattr(self, "_motion_task", None)
+        if task and not task.done():
+            task.cancel()
+        self._motion_task = None
+
+    async def _animate_motion_demo(self, selected_path):
+        stage = self._usd_context.get_stage()
+        if not stage:
+            return
+        prim = self._lift_target_prim(stage, selected_path)
+        if not prim:
+            return
+
+        path = prim.GetPath().pathString
+        xformable = UsdGeom.Xformable(prim)
+        motion_op = next(
+            (
+                op
+                for op in xformable.GetOrderedXformOps()
+                if op.GetOpName() == "xformOp:translate:viewerSimulation"
+            ),
+            None,
+        )
+        if motion_op is None:
+            previous_target = stage.GetEditTarget()
+            try:
+                stage.SetEditTarget(stage.GetSessionLayer())
+                motion_op = xformable.AddTranslateOp(
+                    UsdGeom.XformOp.PrecisionDouble,
+                    "viewerSimulation",
+                )
+            finally:
+                stage.SetEditTarget(previous_target)
+
+        base = self._motion_bases.setdefault(path, motion_op.Get() or Gf.Vec3d(0.0))
+        meters_per_unit = UsdGeom.GetStageMetersPerUnit(stage) or 0.01
+        distance = 0.50 / meters_per_unit
+        axis = 1 if UsdGeom.GetStageUpAxis(stage) == UsdGeom.Tokens.y else 2
+        started_at = time.perf_counter()
+        self._send_application_event(
+            "viewer:interaction",
+            {"action": "Animating", "path": path},
+        )
+
+        # This task is created by PLAY and cancelled by PAUSE/STOP. Do not
+        # re-check is_playing() here: on some Kit versions the PLAY event is
+        # delivered one update before that property becomes true.
+        while self._usd_context.get_stage() is stage:
+            # Minimal Kit experiences can report a stationary timeline time even
+            # while playing. Play/Stop still gates this task, while a monotonic
+            # clock makes the visible demo motion reliable in every experience.
+            phase = math.tau * (time.perf_counter() - started_at) / 3.0
+            value = Gf.Vec3d(base)
+            value[axis] += distance * (0.5 - 0.5 * math.cos(phase))
+            self._set_session_value(stage, motion_op.GetAttr(), value)
+            await omni.kit.app.get_app().next_update_async()
 
     @staticmethod
     def _lift_target_prim(stage, path):

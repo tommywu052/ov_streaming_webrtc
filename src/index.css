@@ -71,8 +71,13 @@ button {
     color: var(--muted);
     font-size: 11px;
 }
-.connection-pill {
+.header-actions {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+.connection-pill {
     display: flex;
     align-items: center;
     gap: 7px;
@@ -83,6 +88,43 @@ button {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.12em;
+}
+.simulation-button {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 11px;
+    border: 1px solid rgba(118, 185, 0, 0.55);
+    border-radius: 5px;
+    color: #dfffa9;
+    background: rgba(118, 185, 0, 0.1);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.simulation-button .icon {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+    stroke: none;
+}
+.simulation-button:hover:not(:disabled) {
+    border-color: var(--green-bright);
+    background: rgba(118, 185, 0, 0.2);
+}
+.simulation-button.playing {
+    color: #ffcaca;
+    border-color: rgba(255, 92, 92, 0.58);
+    background: rgba(169, 42, 42, 0.16);
+}
+.simulation-button.playing:hover:not(:disabled) {
+    border-color: #ff7777;
+    background: rgba(169, 42, 42, 0.26);
+}
+.simulation-button:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 .connection-pill .icon {
     width: 10px;

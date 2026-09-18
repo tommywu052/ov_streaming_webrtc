@@ -23,6 +23,8 @@ Minimal 不包含 PhysX、機器人、感測器、Replicator、Isaac Lab 或完�
 - 延遲載入 OpenUSD Stage tree
 - 網頁與 viewport 雙向 selection focus
 - 點選 viewport 物件後平滑升起／降下
+- 從網頁 Play／Stop Isaac Sim timeline，並同步外部 timeline 狀態
+- Play 時讓選取物件上下往復；未選取物件時建立不寫入 USD 的暫存 Demo Cube
 - 隱藏 viewport HUD/GPU 統計資訊
 - Windows PowerShell 與 Ubuntu shell launchers
 
@@ -149,12 +151,15 @@ Requests：
 - `viewer:open-stage`
 - `viewer:reload-stage`
 - `viewer:select-prim`
+- `viewer:get-timeline`
+- `viewer:set-timeline-playing`
 
 Backend events：
 
 - `viewer:selection-changed`
 - `viewer:stage-changed`
 - `viewer:interaction`
+- `viewer:timeline-changed`
 
 5.1 control WebSocket 預設只綁定 `127.0.0.1`，因此 5.1 模式預設要求瀏覽器與 Isaac Sim 位於同一台主機。
 

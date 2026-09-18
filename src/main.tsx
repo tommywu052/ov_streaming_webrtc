@@ -43,7 +43,11 @@ type PendingRequest = {
     timer: number;
 };
 
-function Icon({ name }: { name: 'cube' | 'chevron' | 'refresh' | 'folder' | 'status' }) {
+function Icon({
+    name,
+}: {
+    name: 'cube' | 'chevron' | 'refresh' | 'folder' | 'status' | 'play' | 'stop';
+}) {
     const paths = {
         cube: (
             <>
@@ -60,6 +64,8 @@ function Icon({ name }: { name: 'cube' | 'chevron' | 'refresh' | 'folder' | 'sta
         ),
         folder: <path d="M3 6.5h6l2 2h10v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6.5Z" />,
         status: <circle cx="12" cy="12" r="7" />,
+        play: <path d="m8 5 11 7-11 7V5Z" />,
+        stop: <path d="M7 7h10v10H7Z" />,
     };
     return (
         <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -198,6 +204,8 @@ function ViewerApp() {
     const [roots, setRoots] = useState<StageNodeData[]>([]);
     const [selectedPath, setSelectedPath] = useState('');
     const [busy, setBusy] = useState(false);
+    const [simulationPlaying, setSimulationPlaying] = useState(false);
+    const [simulationBusy, setSimulationBusy] = useState(false);
 
     const handleCustomEvent = useCallback((raw: unknown) => {
         let message = raw as ViewerMessage;
@@ -243,6 +251,9 @@ function ViewerApp() {
             const action = String(message.payload?.action ?? 'Updated');
             const path = String(message.payload?.path ?? 'object');
             setStatusText(`${action} ${path}`);
+        }
+        else if (message.event_type === 'viewer:timeline-changed') {
+            setSimulationPlaying(Boolean(message.payload?.playing));
         }
     }, []);
 
@@ -340,6 +351,11 @@ function ViewerApp() {
         setStatusText('Stage synchronized');
     }, [sendRequest]);
 
+    const refreshTimeline = useCallback(async () => {
+        const response = await sendRequest('viewer:get-timeline');
+        setSimulationPlaying(Boolean(response.payload?.playing));
+    }, [sendRequest]);
+
     const loadChildren = useCallback(
         async (path: string) => {
             const response = await sendRequest('viewer:get-children', { path });
@@ -399,6 +415,29 @@ function ViewerApp() {
         [sendRequest]
     );
 
+    const toggleSimulation = async () => {
+        const nextPlaying = !simulationPlaying;
+        setSimulationBusy(true);
+        setStatusText(nextPlaying ? 'Starting simulation' : 'Stopping simulation');
+        try {
+            const response = await sendRequest('viewer:set-timeline-playing', {
+                playing: nextPlaying,
+            });
+            if (response.payload?.success === false) {
+                throw new Error(String(response.payload?.error ?? 'Timeline control failed'));
+            }
+            const playing = Boolean(response.payload?.playing);
+            setSimulationPlaying(playing);
+            setStatusText(playing ? 'Simulation playing' : 'Simulation stopped');
+        }
+        catch (error) {
+            setStatusText(error instanceof Error ? error.message : 'Timeline control failed');
+        }
+        finally {
+            setSimulationBusy(false);
+        }
+    };
+
     const streamConfig = useMemo<DirectConfig>(
         () => ({
             videoElementId: 'remote-video',
@@ -413,7 +452,7 @@ function ViewerApp() {
                     setConnection('ready');
                     setStatusText('Connected');
                     window.setTimeout(() => {
-                        void refreshStage().catch(error => {
+                        void Promise.all([refreshStage(), refreshTimeline()]).catch(error => {
                             setStatusText(
                                 error instanceof Error ? error.message : 'Backend is not responding'
                             );
@@ -428,10 +467,11 @@ function ViewerApp() {
             onCustomEvent: handleCustomEvent,
             onStop: () => {
                 setConnection('stopped');
+                setSimulationPlaying(false);
                 setStatusText('Stream stopped');
             },
         }),
-        [handleCustomEvent, refreshStage]
+        [handleCustomEvent, refreshStage, refreshTimeline]
     );
 
     const viewProps: ViewProps = useMemo(
@@ -449,9 +489,27 @@ function ViewerApp() {
                     <strong>Omniverse Web Viewer</strong>
                     <span>Isaac Sim{targetVersion ? ` ${targetVersion}` : ''} · WebRTC</span>
                 </div>
-                <div className={`connection-pill ${connection}`}>
-                    <Icon name="status" />
-                    {connection === 'ready' ? 'Live' : connection}
+                <div className="header-actions">
+                    <button
+                        className={`simulation-button ${simulationPlaying ? 'playing' : ''}`}
+                        onClick={() => void toggleSimulation()}
+                        disabled={connection !== 'ready' || simulationBusy}
+                        aria-pressed={simulationPlaying}
+                        title={simulationPlaying ? 'Stop simulation' : 'Play simulation'}
+                    >
+                        <Icon name={simulationPlaying ? 'stop' : 'play'} />
+                        <span>
+                            {simulationBusy
+                                ? 'Working'
+                                : simulationPlaying
+                                  ? 'Stop simulation'
+                                  : 'Play simulation'}
+                        </span>
+                    </button>
+                    <div className={`connection-pill ${connection}`}>
+                        <Icon name="status" />
+                        {connection === 'ready' ? 'Live' : connection}
+                    </div>
                 </div>
             </header>
 
@@ -474,7 +532,7 @@ function ViewerApp() {
                         </div>
                     )}
                     <div className="viewport-hint">
-                        ALT + drag orbit · RMB + WASD fly · Scroll changes speed
+                        Play animates the selection or creates a demo cube · ALT + drag orbit
                     </div>
                 </div>
 

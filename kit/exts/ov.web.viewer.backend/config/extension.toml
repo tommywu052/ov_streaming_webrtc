@@ -8,6 +8,7 @@ authors = ["NVIDIA"]
 [dependencies]
 "omni.kit.livestream.messaging" = {}
 "omni.kit.viewport.utility" = {}
+"omni.timeline" = {}
 "omni.usd" = {}
 "isaacsim.storage.native" = {}
 
